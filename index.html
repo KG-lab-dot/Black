@@ -895,3 +895,339 @@
                 }
                 return '';
             }
+
+            cleanText(text) {
+                if (!text) return '';
+                return text.toString()
+                    .toLowerCase()
+                    .replace(/[^\w\s]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            fuzzyMatch(str1, str2) {
+                if (!str1 || !str2) return 0;
+                
+                // Clean and normalize strings
+                const s1 = this.cleanText(str1);
+                const s2 = this.cleanText(str2);
+                
+                if (s1 === s2) return 100;
+                
+                // Calculate Levenshtein distance
+                const distance = this.levenshteinDistance(s1, s2);
+                const maxLength = Math.max(s1.length, s2.length);
+                
+                if (maxLength === 0) return 100;
+                
+                // Convert to similarity percentage
+                const similarity = ((maxLength - distance) / maxLength) * 100;
+                
+                // Bonus for partial matches
+                const wordsMatch = this.calculateWordMatches(s1, s2);
+                const finalScore = Math.max(similarity, wordsMatch);
+                
+                return Math.min(100, finalScore);
+            }
+
+            levenshteinDistance(str1, str2) {
+                const matrix = [];
+                
+                // Create matrix
+                for (let i = 0; i <= str2.length; i++) {
+                    matrix[i] = [i];
+                }
+                
+                for (let j = 0; j <= str1.length; j++) {
+                    matrix[0][j] = j;
+                }
+                
+                // Fill matrix
+                for (let i = 1; i <= str2.length; i++) {
+                    for (let j = 1; j <= str1.length; j++) {
+                        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                            matrix[i][j] = matrix[i - 1][j - 1];
+                        } else {
+                            matrix[i][j] = Math.min(
+                                matrix[i - 1][j - 1] + 1,
+                                matrix[i][j - 1] + 1,
+                                matrix[i - 1][j] + 1
+                            );
+                        }
+                    }
+                }
+                
+                return matrix[str2.length][str1.length];
+            }
+
+            calculateWordMatches(str1, str2) {
+                const words1 = str1.split(' ').filter(w => w.length > 0);
+                const words2 = str2.split(' ').filter(w => w.length > 0);
+                
+                if (words1.length === 0 || words2.length === 0) return 0;
+                
+                let matches = 0;
+                const used = new Set();
+                
+                for (const word1 of words1) {
+                    for (let i = 0; i < words2.length; i++) {
+                        if (used.has(i)) continue;
+                        
+                        const word2 = words2[i];
+                        const wordSimilarity = this.wordSimilarity(word1, word2);
+                        
+                        if (wordSimilarity > 0.8) {
+                            matches++;
+                            used.add(i);
+                            break;
+                        }
+                    }
+                }
+                
+                const totalWords = Math.max(words1.length, words2.length);
+                return (matches / totalWords) * 100;
+            }
+
+            wordSimilarity(word1, word2) {
+                if (word1 === word2) return 1;
+                
+                const distance = this.levenshteinDistance(word1, word2);
+                const maxLength = Math.max(word1.length, word2.length);
+                
+                return (maxLength - distance) / maxLength;
+            }
+
+            showResults() {
+                const resultsSection = document.getElementById('resultsSection');
+                const statsGrid = document.getElementById('statsGrid');
+                
+                // Calculate statistics
+                const totalMatches = this.matches.length;
+                const highConfidence = this.matches.filter(m => m.confidence === 'high').length;
+                const mediumConfidence = this.matches.filter(m => m.confidence === 'medium').length;
+                const averageScore = totalMatches > 0 ? 
+                    Math.round(this.matches.reduce((sum, m) => sum + m.score, 0) / totalMatches) : 0;
+                
+                // Update statistics
+                document.getElementById('totalMatches').textContent = totalMatches;
+                document.getElementById('highConfidence').textContent = highConfidence;
+                document.getElementById('mediumConfidence').textContent = mediumConfidence;
+                document.getElementById('averageScore').textContent = averageScore + '%';
+                
+                // Show preview of matches
+                this.showMatchesPreview();
+                
+                // Show results section
+                resultsSection.style.display = 'block';
+                
+                // Scroll to results
+                resultsSection.scrollIntoView({ behavior: 'smooth' });
+                
+                this.showSuccess(`Matching complete! Found ${totalMatches} matches with average score of ${averageScore}%`);
+            }
+
+            showMatchesPreview() {
+                const preview = document.getElementById('matchesPreview');
+                preview.innerHTML = '';
+                
+                if (this.matches.length === 0) {
+                    preview.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No matches found above the threshold</div>';
+                    return;
+                }
+                
+                // Sort matches by score (highest first)
+                const sortedMatches = this.matches.sort((a, b) => b.score - a.score);
+                
+                // Show top 50 matches in preview
+                const previewMatches = sortedMatches.slice(0, 50);
+                
+                previewMatches.forEach((match, index) => {
+                    const matchElement = document.createElement('div');
+                    matchElement.className = 'match-item';
+                    
+                    const titleFields = ['title', 'Title', 'reported title', 'Reported Title', 'song', 'Song', 'track', 'Track'];
+                    const artistFields = ['artist', 'Artist', 'reported artist', 'Reported Artist', 'performer', 'Performer'];
+                    const writerFields = ['writer', 'Writer', 'writers', 'Writers', 'songwriter', 'Songwriter', 'composer', 'Composer', 'author', 'Author'];
+                    
+                    const bbTitle = this.getFieldValue(match.blackboxRecord, titleFields) || 'N/A';
+                    const bbArtist = this.getFieldValue(match.blackboxRecord, artistFields) || 'N/A';
+                    const bbWriter = this.getFieldValue(match.blackboxRecord, writerFields) || 'N/A';
+                    
+                    const intTitle = this.getFieldValue(match.internalRecord, titleFields) || 'N/A';
+                    const intArtist = this.getFieldValue(match.internalRecord, artistFields) || 'N/A';
+                    const intWriter = this.getFieldValue(match.internalRecord, writerFields) || 'N/A';
+                    
+                    matchElement.innerHTML = `
+                        <div class="match-source">
+                            <div class="match-title">${this.escapeHtml(bbTitle)}</div>
+                            <div class="match-artist">${this.escapeHtml(bbArtist)}</div>
+                            <div class="match-writer">${this.escapeHtml(bbWriter)}</div>
+                        </div>
+                        <div class="match-target">
+                            <div class="match-title">${this.escapeHtml(intTitle)}</div>
+                            <div class="match-artist">${this.escapeHtml(intArtist)}</div>
+                            <div class="match-writer">${this.escapeHtml(intWriter)}</div>
+                        </div>
+                        <div class="match-score">${Math.round(match.score)}%</div>
+                    `;
+                    
+                    preview.appendChild(matchElement);
+                });
+                
+                if (this.matches.length > 50) {
+                    const moreElement = document.createElement('div');
+                    moreElement.style.textAlign = 'center';
+                    moreElement.style.padding = '20px';
+                    moreElement.style.color = '#666';
+                    moreElement.style.fontStyle = 'italic';
+                    moreElement.textContent = `... and ${this.matches.length - 50} more matches. Download CSV for complete results.`;
+                    preview.appendChild(moreElement);
+                }
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            downloadResults() {
+                if (this.matches.length === 0) {
+                    this.showError('No matches to download');
+                    return;
+                }
+                
+                // Create CSV content
+                const headers = this.createCSVHeaders();
+                const csvContent = [headers].concat(
+                    this.matches.map(match => this.createCSVRow(match))
+                ).join('\n');
+                
+                // Create and trigger download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `fuzzy_matches_${new Date().toISOString().split('T')[0]}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    
+                    this.showSuccess('Results downloaded successfully!');
+                } else {
+                    this.showError('Download not supported in this browser');
+                }
+            }
+
+            createCSVHeaders() {
+                const headers = [
+                    'Match Score',
+                    'Confidence',
+                    'BB Title',
+                    'BB Artist', 
+                    'BB Writer',
+                    'Internal Title',
+                    'Internal Artist',
+                    'Internal Writer'
+                ];
+                
+                // Add any additional fields from the data
+                if (this.matches.length > 0) {
+                    const bbFields = Object.keys(this.matches[0].blackboxRecord);
+                    const intFields = Object.keys(this.matches[0].internalRecord);
+                    
+                    bbFields.forEach(field => {
+                        if (!headers.includes('BB ' + field)) {
+                            headers.push('BB ' + field);
+                        }
+                    });
+                    
+                    intFields.forEach(field => {
+                        if (!headers.includes('Internal ' + field)) {
+                            headers.push('Internal ' + field);
+                        }
+                    });
+                }
+                
+                return headers.map(h => `"${h}"`).join(',');
+            }
+
+            createCSVRow(match) {
+                const titleFields = ['title', 'Title', 'reported title', 'Reported Title', 'song', 'Song', 'track', 'Track'];
+                const artistFields = ['artist', 'Artist', 'reported artist', 'Reported Artist', 'performer', 'Performer'];
+                const writerFields = ['writer', 'Writer', 'writers', 'Writers', 'songwriter', 'Songwriter', 'composer', 'Composer', 'author', 'Author'];
+                
+                const row = [
+                    Math.round(match.score),
+                    match.confidence,
+                    this.getFieldValue(match.blackboxRecord, titleFields) || '',
+                    this.getFieldValue(match.blackboxRecord, artistFields) || '',
+                    this.getFieldValue(match.blackboxRecord, writerFields) || '',
+                    this.getFieldValue(match.internalRecord, titleFields) || '',
+                    this.getFieldValue(match.internalRecord, artistFields) || '',
+                    this.getFieldValue(match.internalRecord, writerFields) || ''
+                ];
+                
+                // Add additional fields
+                Object.keys(match.blackboxRecord).forEach(field => {
+                    row.push(match.blackboxRecord[field] || '');
+                });
+                
+                Object.keys(match.internalRecord).forEach(field => {
+                    row.push(match.internalRecord[field] || '');
+                });
+                
+                return row.map(cell => `"${this.escapeCSV(cell)}"`).join(',');
+            }
+
+            escapeCSV(text) {
+                if (!text) return '';
+                return text.toString().replace(/"/g, '""');
+            }
+
+            showProgress() {
+                document.getElementById('progressSection').style.display = 'block';
+                document.getElementById('progressFill').style.width = '0%';
+            }
+
+            hideProgress() {
+                document.getElementById('progressSection').style.display = 'none';
+            }
+
+            showError(message) {
+                const errorElement = document.getElementById('errorMessage');
+                errorElement.textContent = message;
+                errorElement.style.display = 'block';
+                
+                setTimeout(() => {
+                    errorElement.style.display = 'none';
+                }, 5000);
+            }
+
+            showSuccess(message) {
+                const successElement = document.getElementById('successMessage');
+                successElement.textContent = message;
+                successElement.style.display = 'block';
+                
+                setTimeout(() => {
+                    successElement.style.display = 'none';
+                }, 5000);
+            }
+
+            hideMessages() {
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('successMessage').style.display = 'none';
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new FuzzyMatcher();
+        });
+    </script>
+</body>
+</html>
